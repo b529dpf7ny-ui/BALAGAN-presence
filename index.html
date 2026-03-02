@@ -52,7 +52,23 @@ nav button.on{color:#EEE6DC;border-bottom-color:#EEE6DC;}
 .si{padding:0 8px;color:#6A5040;font-size:10px;}
 .sc{background:transparent;border:none;color:#6A5040;padding:0 8px;font-size:14px;}
 #vCal{display:block;}
-#vStats,#vAnn,#vTeam{display:none;padding:14px;}
+#vStats,#vAnn,#vTeam,#vTurni{display:none;padding:14px;}
+.tw{overflow-x:auto;padding-bottom:10px;}
+.turni-ct{border-collapse:collapse;font-size:10px;min-width:100%;}
+.turni-ct th{padding:6px 8px;background:#120A07;color:#6A5040;font-weight:200;font-size:7px;
+  letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #32190E;white-space:nowrap;}
+.turni-ct th.day-hdr{text-align:center;min-width:90px;border-left:1px solid #200F08;}
+.turni-ct th.day-hdr.we{background:#0E0705;color:#3A2015;}
+.turni-ct th:first-child{text-align:left;position:sticky;left:0;z-index:2;min-width:145px;border-right:1px solid #200F08;}
+.turni-ct td:first-child{position:sticky;left:0;background:#1A0F0A;z-index:1;font-size:9px;
+  color:#C4B09A;padding:4px 10px;border-right:1px solid #200F08;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:145px;}
+.turni-ct tr:nth-child(even) td:first-child{background:#120A07;}
+.turni-cell{padding:3px;border-left:1px solid #200F08;border-bottom:1px solid #200F08;
+  text-align:center;cursor:pointer;vertical-align:middle;}
+.turni-cell:hover{background:rgba(201,138,74,.06);}
+.turni-pill{border-radius:2px;padding:4px 6px;font-size:8px;font-weight:300;
+  letter-spacing:1px;display:inline-block;min-width:76px;text-align:center;}
 .cw{padding:10px 0 10px 10px;overflow-x:auto;}
 .leg{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;padding-right:10px;}
 .li{display:flex;align-items:center;gap:3px;}
@@ -157,6 +173,7 @@ nav button.on{color:#EEE6DC;border-bottom-color:#EEE6DC;}
         <button class="on" onclick="sv('Cal')">Cal.</button>
         <button onclick="sv('Stats')">Stat.</button>
         <button onclick="sv('Ann')">Anno</button>
+        <button onclick="sv('Turni')">Turni</button>
         <button onclick="sv('Team')">Team</button>
       </nav>
       <button class="xb" onclick="expM()">&#8595; XLS</button>
@@ -180,6 +197,30 @@ nav button.on{color:#EEE6DC;border-bottom-color:#EEE6DC;}
   <div id="vStats"></div>
   <div id="vAnn"></div>
   <div id="vTeam"></div>
+  <div id="vTurni"></div>
+</div>
+
+<!-- TURNI CELL MODAL -->
+<div class="ov" id="tmod" style="display:none" onclick="cTMo()">
+  <div class="mo" onclick="event.stopPropagation()">
+    <div class="me" id="tmemp"></div><div class="hl"></div>
+    <div class="md" id="tmdat"></div>
+    <div class="ms">Turno assegnato</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;" id="tshift-btns"></div>
+    <div class="ms">Orario personalizzato (es. 18:00-24:00)</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input type="text" id="tcustom" placeholder="es. 10:00-16:00"
+        style="flex:1;background:#1A0F0A;border:1px solid #32190E;color:#EEE6DC;padding:8px 10px;font-family:inherit;font-size:11px;outline:none;letter-spacing:1px;"
+        onkeydown="if(event.key==='Enter')setTurno(document.getElementById('tcustom').value)"/>
+      <button onclick="setTurno(document.getElementById('tcustom').value)"
+        style="background:#C98A4A;color:#0C0A08;border:none;padding:8px 14px;font-family:inherit;font-size:8px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;">OK</button>
+    </div>
+    <div class="hl"></div>
+    <div class="mf">
+      <button class="mc" onclick="clTurno()">&#10005; Cancella turno</button>
+      <button class="mx" onclick="cTMo()">Chiudi</button>
+    </div>
+  </div>
 </div>
 
 <div class="ov" id="cmod" style="display:none" onclick="cMo()">
@@ -291,15 +332,16 @@ function showToast(msg){
 function sv(v){
   curView=v;
   var btns=document.querySelectorAll('nav button');
-  ['Cal','Stats','Ann','Team'].forEach(function(id,i){ btns[i].classList.toggle('on',id===v); });
+  ['Cal','Stats','Ann','Turni','Team'].forEach(function(id,i){ btns[i].classList.toggle('on',id===v); });
   document.getElementById('sub').style.display=(v==='Cal'||v==='Stats')?'block':'none';
-  ['Cal','Stats','Ann','Team'].forEach(function(id){
+  ['Cal','Stats','Ann','Team','Turni'].forEach(function(id){
     document.getElementById('v'+id).style.display=id===v?'block':'none';
   });
   if(v==='Cal') rCal();
   else if(v==='Stats') rStats();
   else if(v==='Ann') rAnn();
   else if(v==='Team') rTeam();
+  else if(v==='Turni') rTurni();
 }
 
 // ── MONTH NAV ─────────────────────────────────────────────────────────────────
@@ -573,6 +615,152 @@ function doExpAnn(){
   showToast('Export '+aYr+' completato');
 }
 
+// ── TURNI ─────────────────────────────────────────────────────────────────────
+var TK = 'bg:v7:t';  // localStorage key for turni
+var turni = {};      // key: "YYYY-MM-DD-EMPNAME" -> shift string
+var tWeekStart = null; // Monday of current week shown
+var tEmp = null, tDate = null;
+
+var TSHIFT = [
+  {c:'MATTINA', bg:'#4A6E8A', fg:'#E8EEF4'},
+  {c:'SERA',    bg:'#7A4E28', fg:'#F4EBE0'},
+  {c:'4 ORE',   bg:'#5A6E3A', fg:'#EBF0E0'},
+  {c:'FERIE',   bg:'#3A5870', fg:'#E0EAF0'},
+  {c:'MIA',     bg:'#321510', fg:'#6A5040'},
+  {c:'RECUPERO',bg:'#5A3870', fg:'#EDE0F0'},
+  {c:'RIPOSO',  bg:'#221510', fg:'#6A5040'},
+  {c:'OFF',     bg:'#090605', fg:'#32190E'}
+];
+
+function tkday(empName, dateStr){ return dateStr+'-'+empName; }
+function gtv(e, dateStr){ return turni[tkday(e,dateStr)]||''; }
+
+function tshiftStyle(v){
+  if(!v) return {bg:'transparent',fg:'#3A2015'};
+  var s=TSHIFT.find(function(x){return x.c===v.toUpperCase();});
+  return s ? {bg:s.bg,fg:s.fg} : {bg:'#2A1A0A',fg:'#C98A4A'};
+}
+
+// Get Monday of the week containing date d
+function getMonday(d){
+  var day=d.getDay();
+  var diff=d.getDate()-day+(day===0?-6:1);
+  return new Date(d.getFullYear(),d.getMonth(),diff);
+}
+
+function fmtDate(d){
+  var y=d.getFullYear();
+  var m=String(d.getMonth()+1).padStart(2,'0');
+  var dd=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
+}
+
+function addDays(d,n){
+  var r=new Date(d);r.setDate(r.getDate()+n);return r;
+}
+
+var DAYNAMES_LONG=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+var DAYNAMES_SHORT=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+
+function saveTurni(){
+  try{localStorage.setItem(TK,JSON.stringify(turni));}catch(e){}
+}
+
+function rTurni(){
+  if(!tWeekStart) tWeekStart=getMonday(new Date());
+  var el=document.getElementById('vTurni');
+
+  // Build week days array (Mon-Sun)
+  var days=[];
+  for(var i=0;i<7;i++) days.push(addDays(tWeekStart,i));
+
+  // Week label
+  var wlbl=DAYNAMES_LONG[days[0].getDay()]+' '+days[0].getDate()
+    +' — '+DAYNAMES_LONG[days[6].getDay()]+' '+days[6].getDate()
+    +' '+days[0].toLocaleString('it-IT',{month:'long',year:'numeric'});
+
+  var h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">'
+    +'<button class="mb" onclick="tWeekStart=addDays(tWeekStart,-7);rTurni()">&#8249;</button>'
+    +'<div style="font-weight:200;font-size:11px;letter-spacing:3px;text-transform:uppercase;flex:1;text-align:center;color:#EEE6DC;">'+wlbl+'</div>'
+    +'<button class="mb" onclick="tWeekStart=addDays(tWeekStart,7);rTurni()">&#8250;</button>'
+    +'<button class="mb" onclick="tWeekStart=getMonday(new Date());rTurni()" style="font-size:8px;letter-spacing:2px;padding:0 8px;width:auto;">OGGI</button>'
+    +'</div>';
+
+  // Legend
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">';
+  TSHIFT.forEach(function(s){
+    h+='<div style="background:'+s.bg+';color:'+s.fg+';padding:2px 7px;font-size:7px;letter-spacing:1.5px;border-radius:2px;">'+s.c+'</div>';
+  });
+  h+='</div>';
+
+  // Table
+  h+='<div class="tw"><table class="turni-ct"><thead><tr>'
+    +'<th style="position:sticky;left:0;z-index:3;background:#120A07;">Dipendente</th>';
+
+  var today=fmtDate(new Date());
+  days.forEach(function(d){
+    var ds=fmtDate(d);
+    var dn=d.getDay();
+    var we=dn===0||dn===6;
+    var isToday=ds===today;
+    h+='<th class="day-hdr'+(we?' we':'')+'" style="'+(isToday?'border-bottom:1px solid #C98A4A;':'')+'">'
+      +'<div style="color:'+(isToday?'#C98A4A':(we?'#3A2015':'#6A5040'))+'">'+DAYNAMES_SHORT[dn]+'</div>'
+      +'<div style="font-size:10px;color:'+(isToday?'#EEE6DC':'#C4B09A')+'">'+d.getDate()+'</div></th>';
+  });
+  h+='</tr></thead><tbody>';
+
+  emp.forEach(function(e,ei){
+    var bg=ei%2===0?'#1A0F0A':'#120A07';
+    var esc=e.replace(/\\/g,'\\\\').replace(/'/g,'\\\'');
+    h+='<tr><td style="background:'+bg+'">'+e+'</td>';
+    days.forEach(function(d){
+      var ds=fmtDate(d);
+      var v=gtv(e,ds);
+      var st=tshiftStyle(v);
+      var dn=d.getDay(); var we=dn===0||dn===6;
+      h+='<td class="turni-cell" style="background:'+(we?'rgba(0,0,0,.15)':bg)+'" onclick="oTMod(\''+esc+'\',\''+ds+'\',\''+d.getDate()+'/'+( d.getMonth()+1)+'\')">'
+        +(v?'<div class="turni-pill" style="background:'+st.bg+';color:'+st.fg+'">'+v+'</div>':'<div style="color:#3A2015;font-size:14px;">&#183;</div>')
+        +'</td>';
+    });
+    h+='</tr>';
+  });
+
+  h+='</tbody></table></div>';
+  el.innerHTML=h;
+}
+
+function oTMod(e,dateStr,dateFmt){
+  tEmp=e; tDate=dateStr;
+  document.getElementById('tmemp').textContent=e;
+  document.getElementById('tmdat').textContent=dateFmt+' — clicca il turno';
+  var cur=gtv(e,dateStr);
+  var btns='';
+  TSHIFT.forEach(function(s){
+    var active=cur.toUpperCase()===s.c;
+    btns+='<button onclick="setTurno(\''+s.c+'\')" style="background:'+(active?s.bg:'#1A0F0A')+';color:'+(active?s.fg:'#6A5040')+';border:1px solid '+(active?s.bg:'#32190E')+';padding:9px 4px;font-family:inherit;font-size:8px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:2px;">'+s.c+'</button>';
+  });
+  document.getElementById('tshift-btns').innerHTML=btns;
+  document.getElementById('tcustom').value=(!TSHIFT.find(function(s){return s.c===cur.toUpperCase();})&&cur)?cur:'';
+  document.getElementById('tmod').style.display='flex';
+}
+
+function cTMo(){ document.getElementById('tmod').style.display='none'; tEmp=null; tDate=null; }
+
+function setTurno(v){
+  if(!tEmp||!tDate) return;
+  v=(v||'').trim().toUpperCase();
+  if(!v) return;
+  turni[tkday(tEmp,tDate)]=v;
+  saveTurni(); cTMo(); rTurni();
+  showToast(v+' assegnato');
+}
+
+function clTurno(){
+  if(!tEmp||!tDate) return;
+  delete turni[tkday(tEmp,tDate)];
+  saveTurni(); cTMo(); rTurni();
+}
+
 // ── INIT (after first paint) ──────────────────────────────────────────────────
 function init(){
   // Set assets
@@ -582,11 +770,13 @@ function init(){
   document.getElementById('lg').style.cssText='width:19px;height:23px;filter:sepia(1) saturate(.5) brightness(.75) opacity(.8)';
 
   // Try localStorage, fall back to bundled data
-  var storedEmp=null, storedData=null;
+  var storedEmp=null, storedData=null, storedTurni=null;
   try{var se=localStorage.getItem(EK); if(se) storedEmp=JSON.parse(se);}catch(e){}
   try{var sd=localStorage.getItem(DK); if(sd) storedData=JSON.parse(sd);}catch(e){}
+  try{var st=localStorage.getItem(TK); if(st) storedTurni=JSON.parse(st);}catch(e){}
 
   emp = storedEmp || EMPS;
+  turni = storedTurni || {};
 
   if(storedData){
     data = storedData;
